@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dijkstra — Live</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f4f4f4;color:#1a1a1a;padding:20px;min-height:100vh}
+h1{font-size:22px;font-weight:600;margin-bottom:2px}
+.sub{font-size:13px;color:#666;margin-bottom:18px}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid #ddd;background:#fff;margin-bottom:16px;color:#666}
+.dot-status{width:8px;height:8px;border-radius:50%;background:#ccc}
+.dot-status.online{background:#1D9E75}
+.dot-status.offline{background:#E24B4A}
+.layout{display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start}
+@media(max-width:800px){.layout{grid-template-columns:1fr}}
+.panel{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px;margin-bottom:12px}
+.stitle{font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.row:last-child{margin-bottom:0}
+label{font-size:12px;color:#666;min-width:46px}
+input[type=number]{width:65px}
+input,select,button{font-size:13px;font-family:inherit;border:1px solid #ccc;border-radius:8px;padding:5px 9px;background:#fff;color:#1a1a1a}
+input:focus,select:focus{outline:2px solid #378ADD;border-color:#378ADD}
+button{cursor:pointer}button:hover{background:#f0f0f0}button:active{transform:scale(.98)}
+button.pri{background:#1a1a1a;color:#fff;border-color:#1a1a1a}button.pri:hover{background:#333}
+button.danger{color:#c0392b;border-color:#e8b4b4}button.danger:hover{background:#fdf0f0}
+.tag-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.tag{display:inline-flex;align-items:center;gap:4px;background:#f5f5f5;border:1px solid #e0e0e0;border-radius:99px;padding:2px 9px;font-size:12px}
+.tag button{border:none;background:none;padding:0 2px;font-size:13px;cursor:pointer;color:#aaa;border-radius:0}
+.tag button:hover{background:none;color:#c0392b}
+.err{font-size:12px;color:#c0392b;margin-top:4px}
+.canvas-box{border:1px solid #e0e0e0;border-radius:12px;overflow:hidden;background:#fafafa;margin-bottom:10px}
+svg{display:block;width:100%}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:#666}
+.ldot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.info{font-size:13px;color:#555;padding:8px 12px;background:#f9f9f9;border-radius:8px;border:1px solid #ececec;margin-bottom:10px;min-height:34px}
+.result-box{border:1px solid #e0e0e0;border-radius:12px;overflow:hidden}
+.rhead{padding:7px 14px;background:#f5f5f5;border-bottom:1px solid #e0e0e0;font-weight:600;font-size:12px;color:#666}
+table{width:100%;border-collapse:collapse}
+td,th{padding:7px 14px;text-align:left;border-bottom:1px solid #f0f0f0;font-size:13px}
+th{font-weight:600;font-size:12px;color:#888;background:#fafafa}
+tr:last-child td{border-bottom:none}
+.hl td{background:#e8f4fd;color:#0c447c}
+.ctrl{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.log{background:#1e1e2e;border-radius:10px;padding:12px 14px;font-family:monospace;font-size:12px;color:#a6e3a1;margin-top:12px;max-height:120px;overflow-y:auto;border:1px solid #333}
+.log-line{color:#cdd6f4;margin-bottom:2px}
+.log-line.err{color:#f38ba8}
+.log-line.ok{color:#a6e3a1}
+</style>
+</head>
+<body>
+<h1>Dijkstra's Shortest Path</h1>
+<p class="sub">Frontend connected to your Java backend running on localhost:3000</p>
+
+<div class="status" id="status-badge">
+  <div class="dot-status" id="dot"></div>
+  <span id="status-text">Checking server...</span>
+</div>
+
+<div class="layout">
+<!-- LEFT CONTROLS -->
+<div>
+  <div class="panel">
+    <div class="stitle">Add nodes</div>
+    <div class="row">
+      <label>Name</label>
+      <input type="text" id="node-name" placeholder="e.g. A" style="width:75px" maxlength="6">
+      <button onclick="apiAddNode()">+ Add</button>
+      <button onclick="apiExample()" style="font-size:12px">Load example</button>
+    </div>
+    <div class="tag-row" id="node-tags"></div>
+    <div class="err" id="node-err"></div>
+  </div>
+
+  <div class="panel">
+    <div class="stitle">Add edges</div>
+    <div class="row">
+      <label>From</label><select id="e-from"></select>
+      <label>To</label><select id="e-to"></select>
+    </div>
+    <div class="row">
+      <label>Weight</label><input type="number" id="e-weight" value="1" min="1" max="999">
+      <button onclick="apiAddEdge()">+ Add edge</button>
+    </div>
+    <div class="tag-row" id="edge-tags"></div>
+    <div class="err" id="edge-err"></div>
+  </div>
+
+  <div class="panel">
+    <div class="stitle">Find shortest path</div>
+    <div class="ctrl">
+      <label>Source</label><select id="p-src"></select>
+      <label>Target</label><select id="p-tgt"></select>
+    </div>
+    <div class="ctrl" style="margin-top:8px">
+      <button class="pri" onclick="apiFindPath()">&#9654; Find path</button>
+      <button onclick="apiAllDist()">All distances</button>
+      <button class="danger" onclick="apiReset()">Reset</button>
+    </div>
+    <div class="err" id="path-err"></div>
+  </div>
+
+  <div class="log" id="log"><div class="log-line" style="color:#6c7086">// activity log</div></div>
+</div>
+
+<!-- RIGHT GRAPH -->
+<div>
+  <div class="canvas-box">
+    <svg id="g" viewBox="0 0 600 320">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <g id="el"></g><g id="ell"></g><g id="nl"></g>
+      <text id="empty-msg" x="300" y="160" text-anchor="middle" font-size="13" fill="#bbb">Graph will appear here</text>
+    </svg>
+  </div>
+  <div class="legend">
+    <div class="leg"><div class="ldot" style="background:#3B8BD4"></div>Source</div>
+    <div class="leg"><div class="ldot" style="background:#1D9E75"></div>Target</div>
+    <div class="leg"><div class="ldot" style="background:#E24B4A"></div>Shortest path</div>
+    <div class="leg"><div class="ldot" style="background:#eee;border:1px solid #ccc"></div>Unvisited</div>
+  </div>
+  <div class="info" id="info">Start the Java server, then add nodes and edges.</div>
+  <div id="result-wrap" style="display:none" class="result-box">
+    <div class="rhead" id="rhead">Results</div>
+    <table><thead><tr><th>Node</th><th>Distance</th><th>Path</th></tr></thead>
+    <tbody id="rbody"></tbody></table>
+  </div>
+</div>
+</div>
+
+<script>
+const BASE = 'http://localhost:3000';
+const NS   = 'http://www.w3.org/2000/svg';
+let gNodes=[], gEdges=[], pathHL=[];
+
+// ── Logging ────────────────────────────────────────────────────────────────
+function log(msg, type=''){
+  const div=document.getElementById('log');
+  const line=document.createElement('div');
+  line.className='log-line'+(type?' '+type:'');
+  line.textContent='> '+msg;
+  div.appendChild(line);
+  div.scrollTop=div.scrollHeight;
+}
+
+// ── Server health check ────────────────────────────────────────────────────
+async function checkServer(){
+  try{
+    const r=await fetch(BASE+'/graph',{signal:AbortSignal.timeout(1500)});
+    if(r.ok){
+      document.getElementById('dot').className='dot-status online';
+      document.getElementById('status-text').textContent='Java server online — localhost:8080';
+      return true;
+    }
+  }catch(e){}
+  document.getElementById('dot').className='dot-status offline';
+  document.getElementById('status-text').textContent='Java server offline — run: java Dijkstra';
+  return false;
+}
+
+// ── API calls ──────────────────────────────────────────────────────────────
+async function api(method, path, body){
+  try{
+    const opts={method,headers:{'Content-Type':'application/json'}};
+    if(body) opts.body=JSON.stringify(body);
+    const r=await fetch(BASE+path,opts);
+    return await r.json();
+  }catch(e){ log('Cannot reach server — is Java running?','err'); return {error:'unreachable'}; }
+}
+
+async function syncGraph(){
+  const data=await api('GET','/graph');
+  if(data.error){log(data.error,'err');return;}
+  gNodes=data.nodes||[];
+  gEdges=data.edges||[];
+  refreshSelects();
+  renderTags();
+  rebuildSVG();
+}
+
+async function apiAddNode(){
+  const inp=document.getElementById('node-name');
+  const name=inp.value.trim().toUpperCase();
+  const err=document.getElementById('node-err');
+  if(!name){err.textContent='Enter a name.';return;}
+  const r=await api('POST','/node',{name});
+  if(r.error){err.textContent=r.error;log('Node error: '+r.error,'err');}
+  else{err.textContent='';inp.value='';log('Added node: '+name,'ok');pathHL=[];await syncGraph();}
+}
+
+async function apiAddEdge(){
+  const from=document.getElementById('e-from').value;
+  const to=document.getElementById('e-to').value;
+  const weight=parseInt(document.getElementById('e-weight').value)||1;
+  const err=document.getElementById('edge-err');
+  if(!from||!to){err.textContent='Select nodes.';return;}
+  if(from===to){err.textContent='No self-loops.';return;}
+  const r=await api('POST','/edge',{from,to,weight});
+  if(r.error){err.textContent=r.error;log('Edge error: '+r.error,'err');}
+  else{err.textContent='';log(`Added edge: ${from} <-> ${to} w=${weight}`,'ok');pathHL=[];await syncGraph();}
+}
+
+async function apiRemoveNode(name){
+  const r=await api('DELETE',`/node?name=${name}`);
+  if(r.error)log('Remove error: '+r.error,'err');
+  else{log('Removed node: '+name);pathHL=[];await syncGraph();}
+}
+
+async function apiRemoveEdge(from,to){
+  const r=await api('DELETE',`/edge?from=${from}&to=${to}`);
+  if(r.error)log('Remove error: '+r.error,'err');
+  else{log(`Removed edge: ${from} <-> ${to}`);pathHL=[];await syncGraph();}
+}
+
+async function apiFindPath(){
+  const src=document.getElementById('p-src').value;
+  const tgt=document.getElementById('p-tgt').value;
+  const err=document.getElementById('path-err');
+  if(!src||!tgt){err.textContent='Select nodes.';return;}
+  if(src===tgt){err.textContent='Same node selected.';return;}
+  err.textContent='';
+  const r=await api('GET',`/dijkstra?src=${src}&tgt=${tgt}`);
+  if(r.error){err.textContent=r.error;log(r.error,'err');return;}
+  log(`Path ${src}→${tgt}: dist=${r.distance} path=${r.path||'none'}`,'ok');
+
+  if(r.distance===-1||!r.path){
+    pathHL=[];
+    document.getElementById('info').textContent=`No path from ${src} to ${tgt}.`;
+    showTable(`Path: ${src} → ${tgt}`,[{node:tgt,distance:'∞',path:'No path exists'}]);
+  } else {
+    pathHL=r.path.split(' -> ');
+    document.getElementById('info').textContent=`Shortest path: ${src} → ${tgt}  |  distance = ${r.distance}`;
+    showTable(`Path: ${src} → ${tgt}`,[{node:tgt,distance:r.distance,path:r.path,highlight:true}]);
+  }
+  rebuildSVG();
+}
+
+async function apiAllDist(){
+  const src=document.getElementById('p-src').value;
+  if(!src){document.getElementById('path-err').textContent='Select source.';return;}
+  document.getElementById('path-err').textContent='';
+  const r=await api('GET',`/dijkstra?src=${src}`);
+  if(r.error){log(r.error,'err');return;}
+  log(`All distances from ${src}`,'ok');
+  pathHL=[];rebuildSVG();
+  const rows=r.all.map(x=>({node:x.node,distance:x.distance===-1?'∞':x.distance,path:x.path||'—',highlight:x.node===src}));
+  showTable(`All distances from ${src}`,rows);
+  document.getElementById('info').textContent=`All shortest distances from node ${src}.`;
+}
+
+async function apiReset(){
+  await api('POST','/reset');
+  pathHL=[];log('Graph reset');
+  document.getElementById('result-wrap').style.display='none';
+  document.getElementById('info').textContent='Graph cleared.';
+  await syncGraph();
+}
+
+async function apiExample(){
+  const r=await api('POST','/example');
+  if(r.error){log(r.error,'err');return;}
+  gNodes=r.nodes||[];gEdges=r.edges||[];
+  pathHL=[];log('Example graph loaded (A-B-C-D-E)','ok');
+  refreshSelects();renderTags();rebuildSVG();
+  document.getElementById('info').textContent='Example loaded. Try: Source=A, Target=E.';
+}
+
+// ── Table ──────────────────────────────────────────────────────────────────
+function showTable(title,rows){
+  document.getElementById('rhead').textContent=title;
+  const body=document.getElementById('rbody');
+  body.innerHTML='';
+  rows.forEach(r=>{
+    const tr=document.createElement('tr');
+    if(r.highlight)tr.className='hl';
+    tr.innerHTML=`<td>${r.node}</td><td>${r.distance}</td><td>${r.path}</td>`;
+    body.appendChild(tr);
+  });
+  document.getElementById('result-wrap').style.display='';
+}
+
+// ── SVG graph ──────────────────────────────────────────────────────────────
+function $e(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(attrs||{}))e.setAttribute(k,v);if(parent)parent.appendChild(e);return e;}
+function nodePos(i,total){const W=600,H=320,pad=55;if(total===1)return{x:W/2,y:H/2};const a=(2*Math.PI*i/total)-Math.PI/2;return{x:W/2+(W/2-pad)*Math.cos(a),y:H/2+(H/2-pad)*Math.sin(a)};}
+function isPathEdge(from,to){for(let i=0;i<pathHL.length-1;i++){if(pathHL[i]===from&&pathHL[i+1]===to)return true;if(pathHL[i]===to&&pathHL[i+1]===from)return true;}return false;}
+
+function rebuildSVG(){
+  const el=document.getElementById('el'),ell=document.getElementById('ell'),nl=document.getElementById('nl'),em=document.getElementById('empty-msg');
+  el.innerHTML='';ell.innerHTML='';nl.innerHTML='';
+  if(!gNodes.length){em.style.display='';return;}em.style.display='none';
+  const pos=gNodes.map((_,i)=>nodePos(i,gNodes.length)),R=21;
+  for(const edge of gEdges){
+    const ui=gNodes.indexOf(edge.from),vi=gNodes.indexOf(edge.to);
+    if(ui<0||vi<0)continue;
+    const p1=pos[ui],p2=pos[vi],dx=p2.x-p1.x,dy=p2.y-p1.y,len=Math.sqrt(dx*dx+dy*dy)||1;
+    const ox=dx/len*R,oy=dy/len*R,ip=isPathEdge(edge.from,edge.to);
+    $e('line',{x1:p1.x+ox,y1:p1.y+oy,x2:p2.x-ox,y2:p2.y-oy,stroke:ip?'#E24B4A':'#ccc','stroke-width':ip?'2.5':'1.5','marker-end':'url(#arr)'},el);
+    const mx=(p1.x+p2.x)/2,my=(p1.y+p2.y)/2,nx=-dy/len*12,ny=dx/len*12;
+    $e('rect',{x:mx+nx-11,y:my+ny-9,width:22,height:18,rx:3,fill:'#fff',stroke:'#ddd','stroke-width':'0.5'},ell);
+    const t=$e('text',{x:mx+nx,y:my+ny+1,'text-anchor':'middle','dominant-baseline':'central','font-size':'11','font-weight':'600',fill:'#888'},ell);
+    t.textContent=edge.weight;
+  }
+  for(const[i,n]of gNodes.entries()){
+    const p=pos[i],isSrc=pathHL[0]===n,isTgt=pathHL[pathHL.length-1]===n&&pathHL.length>1,isP=pathHL.includes(n);
+    const fill=isSrc?'#3B8BD4':isTgt?'#1D9E75':isP?'#E24B4A':'#fff';
+    const stroke=isSrc?'#3B8BD4':isTgt?'#1D9E75':isP?'#E24B4A':'#ccc';
+    $e('circle',{cx:p.x,cy:p.y,r:R,fill,stroke,'stroke-width':'2'},nl);
+    const t=$e('text',{x:p.x,y:p.y,'text-anchor':'middle','dominant-baseline':'central','font-size':'13','font-weight':'600',fill:(isP||isSrc||isTgt)?'#fff':'#1a1a1a'},nl);
+    t.textContent=n;
+  }
+}
+
+// ── Selects & Tags ─────────────────────────────────────────────────────────
+function refreshSelects(){
+  ['e-from','e-to','p-src','p-tgt'].forEach(id=>{
+    const sel=document.getElementById(id),prev=sel.value;
+    sel.innerHTML=gNodes.map(n=>`<option value="${n}">${n}</option>`).join('');
+    if(gNodes.includes(prev))sel.value=prev;
+  });
+}
+function renderTags(){
+  document.getElementById('node-tags').innerHTML=gNodes.map(n=>
+    `<span class="tag">${n}<button onclick="apiRemoveNode('${n}')">×</button></span>`).join('');
+  document.getElementById('edge-tags').innerHTML=gEdges.map(e=>
+    `<span class="tag">${e.from}→${e.to}(${e.weight})<button onclick="apiRemoveEdge('${e.from}','${e.to}')">×</button></span>`).join('');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+(async()=>{
+  const online=await checkServer();
+  if(online)await syncGraph();
+  setInterval(async()=>{
+    const was=document.getElementById('dot').classList.contains('online');
+    const now=await checkServer();
+    if(!was&&now){log('Server connected','ok');await syncGraph();}
+  },3000);
+})();
+
+document.getElementById('node-name').addEventListener('keydown',e=>{if(e.key==='Enter')apiAddNode();});
+</script>
+</body>
+</html>
