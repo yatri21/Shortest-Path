@@ -155,7 +155,7 @@ async function checkServer(){
     const r=await fetch(BASE+'/graph',{signal:AbortSignal.timeout(1500)});
     if(r.ok){
       document.getElementById('dot').className='dot-status online';
-      document.getElementById('status-text').textContent='Java server online — localhost:8080';
+      document.getElementById('status-text').textContent='Java server online — localhost:3000';
       return true;
     }
   }catch(e){}
