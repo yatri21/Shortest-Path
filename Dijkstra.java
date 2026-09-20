@@ -1,7 +1,16 @@
-import com.sun.net.httpserver.*;
-import java.io.*;
-import java.net.*;
-import java.util.*;
+import java.io.File;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.PriorityQueue;
+
+import com.sun.net.httpserver.HttpServer;
 
 public class Dijkstra {
 
@@ -33,11 +42,6 @@ public class Dijkstra {
         nodes.remove(name);
         adj.remove(name);
         edges.removeIf(e -> e[0].equals(name) || e[1].equals(name));
-        // Remove from all adjacency lists
-        for (String n : nodes) {
-            adj.get(n).removeIf(nb -> nb[0] == nodes.indexOf(name));
-        }
-        // Rebuild adj indices after removal
         rebuildAdj();
         return true;
     }
@@ -93,8 +97,6 @@ public class Dijkstra {
         return String.join(" -> ", path);
     }
 
-    // ── JSON helpers ──────────────────────────────────────────────────────────
-
     private String graphJson() {
         StringBuilder sb = new StringBuilder("{\"nodes\":[");
         for (int i = 0; i < nodes.size(); i++) {
@@ -118,26 +120,22 @@ public class Dijkstra {
         if (si == -1) return "{\"error\":\"Source node not found\"}";
         int[][] result = dijkstra(si);
         int[] dist = result[0], prev = result[1];
-
         StringBuilder sb = new StringBuilder("{\"source\":\"").append(src).append("\"");
-
         if (tgt != null && !tgt.isEmpty()) {
             int di = nodes.indexOf(tgt);
             if (di == -1) return "{\"error\":\"Target node not found\"}";
-            String path = reconstructPath(prev, si, di);
             int d = dist[di];
             sb.append(",\"target\":\"").append(tgt).append("\"");
-            sb.append(",\"distance\":").append(d == Integer.MAX_VALUE ? "-1" : d);
-            sb.append(",\"path\":\"").append(d == Integer.MAX_VALUE ? "" : path).append("\"");
+            sb.append(",\"distance\":").append(d == Integer.MAX_VALUE ? -1 : d);
+            sb.append(",\"path\":\"").append(d == Integer.MAX_VALUE ? "" : reconstructPath(prev, si, di)).append("\"");
         } else {
             sb.append(",\"all\":[");
             for (int i = 0; i < nodes.size(); i++) {
                 if (i > 0) sb.append(",");
                 int d = dist[i];
-                String path = d == Integer.MAX_VALUE ? "" : reconstructPath(prev, si, i);
                 sb.append("{\"node\":\"").append(nodes.get(i)).append("\"")
                   .append(",\"distance\":").append(d == Integer.MAX_VALUE ? -1 : d)
-                  .append(",\"path\":\"").append(path).append("\"}");
+                  .append(",\"path\":\"").append(d == Integer.MAX_VALUE ? "" : reconstructPath(prev, si, i)).append("\"}");
             }
             sb.append("]");
         }
@@ -145,12 +143,8 @@ public class Dijkstra {
         return sb.toString();
     }
 
-    // ── HTTP Server ───────────────────────────────────────────────────────────
-
     public void startServer(int port) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
-
-        // CORS + routing
         server.createContext("/", exchange -> {
             exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
             exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
@@ -164,68 +158,59 @@ public class Dijkstra {
             String body   = new String(exchange.getRequestBody().readAllBytes());
             String query  = exchange.getRequestURI().getQuery();
             Map<String,String> params = parseQuery(query);
-
-            String response;
-            int status = 200;
+            String response; int status = 200;
 
             try {
-                // GET /graph  — return current graph
                 if (method.equals("GET") && path.equals("/graph")) {
                     response = graphJson();
-
-                // POST /node  body: {"name":"A"}
                 } else if (method.equals("POST") && path.equals("/node")) {
                     String name = jsonField(body, "name").toUpperCase();
                     if (name.isEmpty()) { status=400; response="{\"error\":\"Missing name\"}"; }
                     else if (nodes.contains(name)) { status=409; response="{\"error\":\"Node exists\"}"; }
                     else { addNode(name); response="{\"ok\":true}"; System.out.println("[+] Node: " + name); }
-
-                // DELETE /node?name=A
                 } else if (method.equals("DELETE") && path.equals("/node")) {
                     String name = params.getOrDefault("name","").toUpperCase();
                     boolean ok = removeNode(name);
                     response = ok ? "{\"ok\":true}" : "{\"error\":\"Node not found\"}";
-                    if (ok) System.out.println("[-] Node: " + name);
-
-                // POST /edge  body: {"from":"A","to":"B","weight":3}
                 } else if (method.equals("POST") && path.equals("/edge")) {
                     String from = jsonField(body,"from").toUpperCase();
                     String to   = jsonField(body,"to").toUpperCase();
-                    int    wt   = jsonInt(body,"weight",1);
+                    int wt      = jsonInt(body,"weight",1);
                     boolean ok  = addEdge(from, to, wt);
                     response = ok ? "{\"ok\":true}" : "{\"error\":\"Edge invalid or duplicate\"}";
-                    if (ok) System.out.println("[+] Edge: " + from + " <-> " + to + " w=" + wt);
-
-                // DELETE /edge?from=A&to=B
                 } else if (method.equals("DELETE") && path.equals("/edge")) {
                     String from = params.getOrDefault("from","").toUpperCase();
                     String to   = params.getOrDefault("to","").toUpperCase();
                     boolean ok  = removeEdge(from, to);
                     response = ok ? "{\"ok\":true}" : "{\"error\":\"Edge not found\"}";
-                    if (ok) System.out.println("[-] Edge: " + from + " <-> " + to);
-
-                // GET /dijkstra?src=A&tgt=E  or  ?src=A  (all distances)
                 } else if (method.equals("GET") && path.equals("/dijkstra")) {
                     String src = params.getOrDefault("src","").toUpperCase();
                     String tgt = params.getOrDefault("tgt","");
                     if (src.isEmpty()) { status=400; response="{\"error\":\"src required\"}"; }
-                    else { response = dijkstraJson(src, tgt.toUpperCase()); System.out.println("[~] Dijkstra src=" + src + (tgt.isEmpty()?"":" tgt="+tgt.toUpperCase())); }
-
-                // POST /reset
+                    else { response = dijkstraJson(src, tgt.toUpperCase()); }
                 } else if (method.equals("POST") && path.equals("/reset")) {
                     nodes.clear(); edges.clear(); adj.clear();
-                    response="{\"ok\":true}"; System.out.println("[*] Graph reset");
-
-                // POST /example
+                    response="{\"ok\":true}";
                 } else if (method.equals("POST") && path.equals("/example")) {
                     nodes.clear(); edges.clear(); adj.clear();
                     addNode("A"); addNode("B"); addNode("C"); addNode("D"); addNode("E");
                     addEdge("A","B",1); addEdge("A","C",4); addEdge("B","C",2);
                     addEdge("B","D",5); addEdge("C","D",1); addEdge("D","E",3); addEdge("B","E",7);
-                    response=graphJson(); System.out.println("[*] Example graph loaded");
+                    response=graphJson();
 
+                // Serve index.html for root path
+                } else if (method.equals("GET") && (path.equals("/") || path.equals("/index.html"))) {
+                    File f = new File("index.html");
+                    if (!f.exists()) { status=404; response="{\"error\":\"index.html not found\"}"; }
+                    else {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                        exchange.getResponseHeaders().set("Content-Type","text/html");
+                        exchange.sendResponseHeaders(200, bytes.length);
+                        exchange.getResponseBody().write(bytes);
+                        exchange.getResponseBody().close();
+                        return;
+                    }
                 } else { status=404; response="{\"error\":\"Not found\"}"; }
-
             } catch (Exception ex) {
                 status=500; response="{\"error\":\"" + ex.getMessage() + "\"}";
             }
@@ -240,13 +225,9 @@ public class Dijkstra {
         server.setExecutor(null);
         server.start();
         System.out.println("========================================");
-        System.out.println("  Dijkstra HTTP Server running on :"+port);
-        System.out.println("  Open dijkstra.html in your browser");
-        System.out.println("  Press Ctrl+C to stop");
+        System.out.println("  Dijkstra Server running on port: " + port);
         System.out.println("========================================");
     }
-
-    // ── Utility parsers ───────────────────────────────────────────────────────
 
     private static Map<String,String> parseQuery(String query) {
         Map<String,String> map = new HashMap<>();
@@ -285,11 +266,10 @@ public class Dijkstra {
         try { return Integer.parseInt(num.toString()); } catch (Exception e) { return def; }
     }
 
-    // ── Main ──────────────────────────────────────────────────────────────────
-
     public static void main(String[] args) throws IOException {
-        int port = 3000;
-        if (args.length > 0) port = Integer.parseInt(args[0]);
+        // Railway sets PORT environment variable automatically
+        String portEnv = System.getenv("PORT");
+        int port = (portEnv != null) ? Integer.parseInt(portEnv) : 8080;
         new Dijkstra().startServer(port);
     }
 }
