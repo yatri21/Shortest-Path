@@ -53,7 +53,7 @@ tr:last-child td{border-bottom:none}
 </head>
 <body>
 <h1>Dijkstra's Shortest Path</h1>
-<p class="sub">Frontend connected to your Java backend running on localhost:8080</p>
+<p class="sub">Frontend connected to your Java backend running on localhost:3000</p>
 
 <div class="status" id="status-badge">
   <div class="dot-status" id="dot"></div>
@@ -135,7 +135,7 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <script>
-const BASE = window.location.origin;
+const BASE = 'http://localhost:3000';
 const NS   = 'http://www.w3.org/2000/svg';
 let gNodes=[], gEdges=[], pathHL=[];
 
